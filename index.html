@@ -1,103 +1,107 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Copiloto Legal — Comparador per-artículo (FT + OpenAI)</title>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Copiloto Legal — Comparador Multiartículo (FT + OpenAI)</title>
 
-  <!-- UI -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- UI -->
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-  <!-- Utilidades -->
-  <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
-  <script src="https://unpkg.com/file-saver@2.0.5/dist/FileSaver.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/diff@5.1.0/dist/diff.min.js"></script>
+<!-- Utilidades -->
+<script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
+<script src="https://unpkg.com/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/diff@5.1.0/dist/diff.min.js"></script>
 
-  <style>
-    body { font-family: 'Inter', sans-serif; }
-    ins { background:#d4edda; text-decoration:none; }
-    del { background:#f8d7da; text-decoration:line-through; }
-    .loader{border:4px solid #f3f3f3;border-top:4px solid #2563eb;border-radius:50%;width:40px;height:40px;animation:spin 1s linear infinite;margin:2rem auto;}
-    @keyframes spin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
-    #resultsTable th,#resultsTable td{border:1px solid #e5e7eb;padding:10px;vertical-align:top}
-    #resultsTable th{background:#f8fafc;text-align:left}
-    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace}
-  </style>
+<style>
+  body { font-family: 'Inter', sans-serif; }
+  ins { background:#d4edda; text-decoration:none; }
+  del { background:#f8d7da; text-decoration:line-through; }
+  .loader{border:4px solid #f3f3f3;border-top:4px solid #2563eb;border-radius:50%;width:40px;height:40px;animation:spin 1s linear infinite;margin:2rem auto;}
+  @keyframes spin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
+  #resultsTable th,#resultsTable td{border:1px solid #e5e7eb;padding:10px;vertical-align:top}
+  #resultsTable th{background:#f8fafc;text-align:left}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace}
+</style>
 </head>
 <body class="bg-gray-100 text-gray-800 min-h-screen flex flex-col">
 
-  <div class="container mx-auto p-4 md:p-8 flex-1">
-    <header class="mb-6">
-      <h1 class="text-3xl md:text-4xl font-bold">Copiloto Legal — Per-artículo</h1>
-      <p class="text-gray-600">Parseo local ▸ LLM solo “Indicaciones” ▸ Numeración global ▸ Diff ▸ Word.</p>
-    </header>
+<div class="container mx-auto p-4 md:p-8 flex-1">
+  <header class="mb-6">
+    <h1 class="text-3xl md:text-4xl font-bold">Copiloto Legal — Multiartículo</h1>
+    <p class="text-gray-600">Segmenta localmente ▸ empareja A/B/C/D ▸ pide SOLO “Indicaciones” por artículo (JSON) ▸ numera global ▸ diff ▸ Word.</p>
+  </header>
 
-    <!-- Config -->
-    <section class="bg-white p-5 rounded-lg shadow mb-6 grid gap-4 md:grid-cols-3">
-      <div class="md:col-span-2">
-        <label class="block font-semibold mb-2">OpenAI API Key</label>
-        <input type="password" id="apiKey" class="w-full p-3 border rounded-md focus:ring-2 focus:ring-blue-500" placeholder="Pega tu API key"/>
-        <p class="text-sm text-gray-500 mt-1">Se usa solo en tu navegador.</p>
-      </div>
-      <div>
-        <label class="block font-semibold mb-2">Modelo</label>
-        <input type="text" id="modelName" class="w-full p-3 border rounded-md focus:ring-2 focus:ring-blue-500 mono" placeholder="ft:..." />
-        <p class="text-xs text-gray-500 mt-1">Cámbialo si quieres usar otro modelo.</p>
-      </div>
-      <div class="md:col-span-3 flex items-center gap-3">
-        <input id="remember" type="checkbox" class="h-4 w-4" checked/>
-        <label for="remember" class="text-sm text-gray-700">Recordar API key y modelo en este navegador</label>
-      </div>
-    </section>
-
-    <!-- Inputs -->
-    <section class="grid gap-6 md:grid-cols-2">
-      <div class="bg-white p-5 rounded-lg shadow">
-        <div class="flex items-center justify-between mb-2">
-          <h2 class="text-xl font-semibold">Texto Original (completo)</h2>
-          <button id="pasteOriginal" class="text-sm text-blue-600 hover:underline">Pegar</button>
-        </div>
-        <textarea id="originalText" class="w-full h-96 p-3 border rounded-md focus:ring-2 focus:ring-blue-500" placeholder="Pega aquí el texto original completo…"></textarea>
-      </div>
-      <div class="bg-white p-5 rounded-lg shadow">
-        <div class="flex items-center justify-between mb-2">
-          <h2 class="text-xl font-semibold">Texto Final (completo)</h2>
-          <button id="pasteFinal" class="text-sm text-blue-600 hover:underline">Pegar</button>
-        </div>
-        <textarea id="finalText" class="w-full h-96 p-3 border rounded-md focus:ring-2 focus:ring-blue-500" placeholder="Pega aquí el texto final completo…"></textarea>
-      </div>
-    </section>
-
-    <!-- Acciones -->
-    <div class="flex flex-wrap gap-3 justify-center my-8">
-      <button id="generateButton" class="bg-green-600 text-white font-bold py-3 px-6 rounded-lg shadow hover:bg-green-700 focus:ring-4 focus:ring-green-300 disabled:bg-gray-400">Generar tabla comparativa</button>
-      <button id="exportButton" class="bg-blue-600 text-white font-bold py-3 px-6 rounded-lg shadow hover:bg-blue-700">Exportar a Word</button>
-      <button id="clearButton" class="bg-gray-200 text-gray-800 font-semibold py-3 px-6 rounded-lg shadow hover:bg-gray-300">Limpiar</button>
+  <!-- Config -->
+  <section class="bg-white p-5 rounded-lg shadow mb-6 grid gap-4 md:grid-cols-3">
+    <div class="md:col-span-2">
+      <label class="block font-semibold mb-2">OpenAI API Key</label>
+      <input type="password" id="apiKey" class="w-full p-3 border rounded-md focus:ring-2 focus:ring-blue-500" placeholder="Pega tu API key"/>
+      <p class="text-sm text-gray-500 mt-1">Se usa solo en tu navegador.</p>
     </div>
+    <div>
+      <label class="block font-semibold mb-2">Modelo</label>
+      <input type="text" id="modelName" class="w-full p-3 border rounded-md focus:ring-2 focus:ring-blue-500 mono" placeholder="ft:..." />
+      <p class="text-xs text-gray-500 mt-1">Predefinido: tu modelo FT. Puedes cambiarlo.</p>
+    </div>
+    <div class="md:col-span-3 flex items-center gap-3">
+      <input id="remember" type="checkbox" class="h-4 w-4" checked/>
+      <label for="remember" class="text-sm text-gray-700">Recordar API key y modelo en este navegador</label>
+    </div>
+  </section>
 
-    <!-- Resultados -->
-    <section id="outputSection" class="bg-white p-5 rounded-lg shadow hidden">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-xl font-semibold">Resultado <span id="timerResult" class="text-sm font-normal text-gray-500 ml-2"></span></h3>
-        <span id="modelUsed" class="text-xs text-gray-500 mono"></span>
+  <!-- Inputs -->
+  <section class="grid gap-6 md:grid-cols-2">
+    <div class="bg-white p-5 rounded-lg shadow">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-xl font-semibold">Texto Original (completo)</h2>
+        <button id="pasteOriginal" class="text-sm text-blue-600 hover:underline">Pegar</button>
       </div>
-      <div id="resultsContainer" class="w-full overflow-x-auto"></div>
-    </section>
+      <textarea id="originalText" class="w-full h-96 p-3 border rounded-md focus:ring-2 focus:ring-blue-500" placeholder="Pega aquí el texto original completo…"></textarea>
+    </div>
+    <div class="bg-white p-5 rounded-lg shadow">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-xl font-semibold">Texto Final (completo)</h2>
+        <button id="pasteFinal" class="text-sm text-blue-600 hover:underline">Pegar</button>
+      </div>
+      <textarea id="finalText" class="w-full h-96 p-3 border rounded-md focus:ring-2 focus:ring-blue-500" placeholder="Pega aquí el texto final completo…"></textarea>
+    </div>
+  </section>
 
-    <!-- Errores -->
-    <div id="errorBox" class="hidden mt-4 p-4 rounded bg-red-50 border border-red-200 text-red-700"></div>
+  <!-- Acciones -->
+  <div class="flex flex-wrap gap-3 justify-center my-8">
+    <button id="generateButton" class="bg-green-600 text-white font-bold py-3 px-6 rounded-lg shadow hover:bg-green-700 focus:ring-4 focus:ring-green-300 disabled:bg-gray-400">Generar tabla comparativa</button>
+    <button id="exportButton" class="bg-blue-600 text-white font-bold py-3 px-6 rounded-lg shadow hover:bg-blue-700">Exportar a Word</button>
+    <button id="clearButton" class="bg-gray-200 text-gray-800 font-semibold py-3 px-6 rounded-lg shadow hover:bg-gray-300">Limpiar</button>
   </div>
 
-  <footer class="text-center p-4 text-gray-500 text-sm">
-    Copiloto Legal — Opción A (per-artículo) • Cliente 100% local
-  </footer>
+  <!-- Resultados -->
+  <section id="outputSection" class="bg-white p-5 rounded-lg shadow hidden">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-xl font-semibold">Resultado <span id="timerResult" class="text-sm font-normal text-gray-500 ml-2"></span></h3>
+      <span id="modelUsed" class="text-xs text-gray-500 mono"></span>
+    </div>
+    <div id="resultsContainer" class="w-full overflow-x-auto"></div>
+    <details class="mt-4">
+      <summary class="cursor-pointer text-sm text-gray-600">Registro de análisis (debug)</summary>
+      <pre id="debugLog" class="text-xs bg-gray-50 border rounded p-3 overflow-auto max-h-64 whitespace-pre-wrap"></pre>
+    </details>
+  </section>
+
+  <!-- Errores -->
+  <div id="errorBox" class="hidden mt-4 p-4 rounded bg-red-50 border border-red-200 text-red-700"></div>
+</div>
+
+<footer class="text-center p-4 text-gray-500 text-sm">
+  Copiloto Legal — Multiartículo • Cliente 100% local
+</footer>
 
 <script>
-/* ============ Helpers básicos ============ */
+/* ===== Config ===== */
 const $ = (id)=>document.getElementById(id);
-const defaultFTModel = "ft:gpt-4.1-mini-2025-04-14:personal:copiloto-legal-fine:C7rwpGL7";
-const baseFallbackModel = "gpt-4.1-mini-2025-04-14";
+const defaultFTModel   = "ft:gpt-4.1-mini-2025-04-14:personal:copiloto-legal-fine:C7rwpGL7";
+const baseFallbackModel= "gpt-4.1-mini-2025-04-14";
 
 (function boot(){
   const k = localStorage.getItem("openai_key");
@@ -105,45 +109,34 @@ const baseFallbackModel = "gpt-4.1-mini-2025-04-14";
   if (k) $("apiKey").value = k;
   $("modelName").value = m || defaultFTModel;
 })();
-$("remember").addEventListener("change",(e)=>{
-  if(!e.target.checked){ localStorage.removeItem("openai_key"); localStorage.removeItem("openai_model"); }
-});
+$("remember").addEventListener("change",(e)=>{ if(!e.target.checked){ localStorage.removeItem("openai_key"); localStorage.removeItem("openai_model"); }});
 $("pasteOriginal").onclick = async()=>{ try{$("originalText").value = await navigator.clipboard.readText();}catch{} };
 $("pasteFinal").onclick    = async()=>{ try{$("finalText").value    = await navigator.clipboard.readText();}catch{} };
-$("clearButton").onclick   = ()=>{ $("resultsContainer").innerHTML=""; $("outputSection").classList.add("hidden"); $("timerResult").textContent=""; hideError(); };
+$("clearButton").onclick   = ()=>{ $("resultsContainer").innerHTML=""; $("outputSection").classList.add("hidden"); $("timerResult").textContent=""; $("debugLog").textContent=""; hideError(); };
 
+/* ===== UI helpers ===== */
 function showError(msg){ const box=$("errorBox"); box.textContent=msg; box.classList.remove("hidden"); }
 function hideError(){ $("errorBox").classList.add("hidden"); }
 function escapeHtml(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function sanitize(s){ return escapeHtml(s).replace(/\n/g,"<br>"); }
+function dlog(...args){ $("debugLog").textContent += args.join(" ") + "\n"; }
 
-/* ============ 1) Segmentación de artículos (determinista) ============ */
-function romanToInt(str){
-  const s = str.toUpperCase().replace(/[^IVXLCDM]/g,'');
-  const map={I:1,V:5,X:10,L:50,C:100,D:500,M:1000}; let v=0,p=0;
-  for(let i=s.length-1;i>=0;i--){ const n=map[s[i]]; v += n<p ? -n : n; p=n; }
-  return v || null;
-}
-function normalizeHeader(h){
-  return h.replace(/\s+/g,' ').trim().replace(/[\.\-–—:]+\s*$/,'').replace(/^Artículo\s+/i,'Artículo ');
-}
-function splitArticles(fullText){
-  const lines = fullText.split(/\r?\n/);
-  const blocks=[]; let cur=null;
-  const headerRe = /^(Artículo\s+[^\n]+)$/i;
-  for(const raw of lines){
-    const line = raw.trim();
-    if(!line) continue;
-    const m = line.match(headerRe);
-    if(m){
-      if(cur) blocks.push(cur);
-      cur = { header: normalizeHeader(m[1]), body: [] };
-    } else if(cur){
-      cur.body.push(line);
-    }
+/* ===== Robust segmenter (encabezado en la misma línea también) ===== */
+function splitArticles(text){
+  const src = (text||"").replace(/\r\n/g,"\n");
+  // Detecta “Artículo N°”, romanos o ordinales; opcional “transitorio”; header puede terminar con .-, . o :
+  const re = /(^|\n)(Artículo\s+(?:\d+[°º]?|[ivxlcdm]+|[A-Za-zÁÉÍÓÚÑáéíóúñ]+)(?:\s+transitorio)?)(?:\s*(?:\.-|\.|:))?/gmi;
+  const blocks = [];
+  let m, positions=[];
+  while ((m = re.exec(src)) !== null) {
+    positions.push({start:m.index + (m[1] ? m[1].length : 0), header:m[2], end:re.lastIndex});
   }
-  if(cur) blocks.push(cur);
-
+  for(let i=0;i<positions.length;i++){
+    const cur = positions[i], next = positions[i+1];
+    const headerFull = normalizeHeader(cur.header);
+    const body = src.slice(cur.end, next ? next.start : src.length).trim();
+    blocks.push({ header: headerFull, body });
+  }
   // construir keys normalizadas
   const ord = {'primero':'1','segundo':'2','tercero':'3','cuarto':'4','quinto':'5','sexto':'6','séptimo':'7','septimo':'7','octavo':'8','noveno':'9','décimo':'10','decimo':'10'};
   blocks.forEach(b=>{
@@ -153,50 +146,41 @@ function splitArticles(fullText){
     key = key.replace(/artículo\s+([a-záéíóúñ]+)/i,(_,w)=>`artículo ${ord[w]||w}`);
     if(/transitorio/i.test(b.header)) key += " transitorio";
     b.key = key.trim();
-    b.text = b.body.join('\n');
+    b.text= b.body;
   });
   return blocks;
 }
-
-/* ============ 2) Emparejado y clasificación (A/B/C/D) ============ */
-function jaccard(a,b){
-  const tok = t=> new Set(t.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu,'').split(/\s+/).filter(Boolean));
-  const A = tok(a), B = tok(b);
-  let inter=0; for(const x of A){ if(B.has(x)) inter++; }
-  const uni = new Set([...A,...B]).size || 1;
-  return inter/uni;
+function normalizeHeader(h){ return (h||"").replace(/\s+/g," ").trim().replace(/^Artículo\s+/i,"Artículo "); }
+function romanToInt(str){
+  const s=(str||"").toUpperCase().replace(/[^IVXLCDM]/g,''); if(!s) return null;
+  const map={I:1,V:5,X:10,L:50,C:100,D:500,M:1000}; let v=0,p=0;
+  for(let i=s.length-1;i>=0;i--){ const n=map[s[i]]; v += n<p ? -n : n; p=n; }
+  return v||null;
 }
+
+/* ===== Pairing A/B/C/D ===== */
+function tokenizeSafe(t){ return (t||"").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g,"").match(/[a-z0-9]+/g) || []; }
+function jaccard(a,b){ const A=new Set(tokenizeSafe(a)), B=new Set(tokenizeSafe(b)); let inter=0; A.forEach(x=>{if(B.has(x)) inter++;}); const uni=new Set([...A,...B]).size||1; return inter/uni; }
+
 function pairArticles(origBlocks, finBlocks){
   const oMap=new Map(origBlocks.map(b=>[b.key,b]));
   const fMap=new Map(finBlocks.map(b=>[b.key,b]));
-  const usedF = new Set();
-  const pairs=[];
+  const usedF=new Set(); const pairs=[];
 
-  // Caso A: misma clave
-  for(const [k,o] of oMap){
-    if(fMap.has(k)){ const f=fMap.get(k); usedF.add(k); pairs.push({type:'A', original:o, final:f}); }
-  }
-  // Caso B: nuevos
-  for(const [k,f] of fMap){
-    if(!oMap.has(k) && !usedF.has(k)){ usedF.add(k); pairs.push({type:'B', original:null, final:f}); }
-  }
-  // Caso C/D: originales sin par -> renumeración o eliminado
+  // A: misma clave
+  for(const [k,o] of oMap){ if(fMap.has(k)){ const f=fMap.get(k); usedF.add(k); pairs.push({type:'A', original:o, final:f}); } }
+  // B: nuevos
+  for(const [k,f] of fMap){ if(!oMap.has(k)&&!usedF.has(k)){ usedF.add(k); pairs.push({type:'B', original:null, final:f}); } }
+  // C/D: originales sin par
   for(const [k,o] of oMap){
     if(pairs.find(p=>p.original?.key===k)) continue;
     let bestKey=null, bestS=0;
-    for(const [kf,f] of fMap){
-      if(usedF.has(kf)) continue;
-      const s=jaccard(o.text, f.text);
-      if(s>bestS){ bestS=s; bestKey=kf; }
-    }
-    if(bestS>=0.90){
-      const f=fMap.get(bestKey); usedF.add(bestKey); pairs.push({type:'D', original:o, final:f});
-    } else {
-      pairs.push({type:'C', original:o, final:null});
-    }
+    for(const [kf,f] of fMap){ if(usedF.has(kf)) continue; const s=jaccard(o.text, f.text); if(s>bestS){ bestS=s; bestKey=kf; } }
+    if(bestS>=0.90){ const f=fMap.get(bestKey); usedF.add(bestKey); pairs.push({type:'D', original:o, final:f}); }
+    else { pairs.push({type:'C', original:o, final:null}); }
   }
 
-  // Ordenar por aparición en el Final; lo sin final queda al final
+  // Orden por aparición en el Final; lo sin final al final
   const order = new Map(finBlocks.map((b,i)=>[b.key,i]));
   pairs.sort((a,b)=>{
     const ia = a.final ? order.get(a.final.key) ?? 1e9 : 1e9;
@@ -206,51 +190,49 @@ function pairArticles(origBlocks, finBlocks){
   return pairs;
 }
 
-/* ============ 3) Prompt por artículo (solo INDICACIONES) ============ */
-function buildArticlePrompt(pair){
+/* ===== Prompt por artículo (JSON estricto) ===== */
+function buildArticlePromptJSON(pair){
   const head = (pair.final?.header) || (pair.original?.header) || "Artículo";
-  const O = pair.original ? `\n\n[ORIGINAL]\n${pair.original.header}\n${pair.original.text}` : "";
-  const F = pair.final    ? `\n\n[FINAL]\n${pair.final.header}\n${pair.final.text}`       : "";
-  const caso = pair.type; // A=modifica, B=nuevo, C=eliminado, D=renumerado
+  const O = pair.original ? `\n[ORIGINAL]\n${pair.original.header}\n${pair.original.text}` : "";
+  const F = pair.final    ? `\n[FINAL]\n${pair.final.header}\n${pair.final.text}`       : "";
+  const caso = pair.type; // A|B|C|D
 
   const system = [
     "Eres asesor legislativo chileno.",
-    "Devuelve SOLO el bloque 'INDICACIONES' para el artículo indicado, sin explicaciones ni texto adicional.",
-    "Formato OBLIGATORIO:",
-    "AL ARTÍCULO [nombre completo]",
-    "1) Para [verbo en infinitivo] ...",
-    "   a) [Verbo normativo] ...",
-    "2) ...",
-    "Usa verbos normativos: Incorpórase, Sustitúyese, Intercálese, Suprímese, Modifícase.",
+    "Devuelve ÚNICAMENTE un JSON válido UTF-8 sin texto adicional, con este esquema:",
+    '{"al_articulo":"AL ARTÍCULO [nombre completo]","indicaciones":["1) ...","   a) ...","2) ..."]}',
+    "Reglas: redacta en español normativo; usa verbos Incorpórase, Sustitúyese, Intercálese, Suprímese, Modifícase; mínimo 1 indicación; máximo 12 líneas en total.",
     "Si el caso es B (nuevo), C (eliminado) o D (renumerado), indícalo explícitamente en la primera indicación."
   ].join("\n");
 
   const user = [
-    `Genera INDICACIONES para ${head}. Caso ${caso}.`,
-    "Incluye al menos 1 indicación numerada. Sé preciso; no repitas párrafos completos.",
+    `Genera INDICACIONES (JSON) para ${head}. Caso ${caso}.`,
+    "No repitas párrafos completos; sé concreto.",
     O, F
   ].join("\n");
 
   return { system, user, header: head };
 }
 
-/* ============ 4) Llamadas a la API con control de concurrencia ============ */
+/* ===== Llamadas a la API, concurrencia 2, JSON parse ===== */
 async function callIndicationsForAll(pairs, model, apiKey){
-  const results = [];
-  const limit = 2; let cursor=0, running=0;
+  const results=[]; const limit=2; let cursor=0, running=0;
 
   return new Promise((resolve)=>{
-    const tick = ()=>{
+    const tick=()=>{
       if(cursor>=pairs.length && running===0) return resolve(results);
       while(running<limit && cursor<pairs.length){
-        const idx = cursor++; running++;
+        const idx=cursor++; running++;
         (async()=>{
           const p = pairs[idx];
-          const {system, user, header} = buildArticlePrompt(p);
+          const {system, user, header} = buildArticlePromptJSON(p);
           try{
-            const raw = await askOnce(system, user, model, apiKey);
-            const clean = repairIfNeeded(raw, header);
-            results[idx] = { ok:true, pair:p, header, indicaciones: clean };
+            const obj = await askJSON(system, user, model, apiKey);
+            const al  = (obj.al_articulo || `AL ARTÍCULO ${header.replace(/^Artículo\s+/i,'')}`).trim();
+            const arr = Array.isArray(obj.indicaciones) ? obj.indicaciones.map(s=>String(s||"").trim()).filter(Boolean) : [];
+            if (!arr.length) throw new Error("JSON sin 'indicaciones'");
+            const block = [al, ...arr].join("\n");
+            results[idx] = { ok:true, pair:p, header, indicaciones: block };
           }catch(e){
             results[idx] = { ok:false, pair:p, header, error: String(e) };
           }finally{ running--; tick(); }
@@ -261,13 +243,14 @@ async function callIndicationsForAll(pairs, model, apiKey){
   });
 }
 
-async function askOnce(systemContent, userContent, model, apiKey){
+async function askJSON(systemContent, userContent, model, apiKey){
   const url="https://api.openai.com/v1/chat/completions";
   const payload={
     model,
-    messages:[
-      {role:"system",content:systemContent},
-      {role:"user",content:userContent}
+    response_format: { type: "json_object" },
+    messages: [
+      {role:"system", content:systemContent},
+      {role:"user",   content:userContent}
     ],
     temperature:0.0,
     max_tokens:1200
@@ -284,7 +267,7 @@ async function askOnce(systemContent, userContent, model, apiKey){
         const data=await res.json();
         const text=data?.choices?.[0]?.message?.content||"";
         if(!text) throw new Error("Respuesta vacía.");
-        return text.trim();
+        try{ return JSON.parse(text); }catch(e){ throw new Error("No es JSON válido."); }
       }
       if((res.status===429 || res.status>=500) && i<4){
         await new Promise(r=>setTimeout(r, (2**i)*1000 + Math.random()*500));
@@ -296,31 +279,31 @@ async function askOnce(systemContent, userContent, model, apiKey){
   throw lastErr;
 }
 
-/* ============ 5) Reparación ligera + Numeración global ============ */
-function repairIfNeeded(txt, header){
-  let t = txt.trim();
-  if(!/^AL\s+ART[IÍ]CULO/i.test(t)){
-    t = `AL ARTÍCULO ${header.replace(/^Artículo\s+/i,'')}\n` + t;
+/* ===== Deduplicación & numeración global ===== */
+function dedupeLines(text){
+  // evita repeticiones accidentales tipo "AL ARTÍCULO X°" en cascada
+  const seen=new Set(); const out=[];
+  for(const ln of text.split(/\r?\n/)){
+    const key = ln.trim();
+    if(key && seen.has(key)) continue;
+    seen.add(key); out.push(ln);
   }
-  if(!/^\s*1\)\s/m.test(t)){
-    t = t.replace(/^AL\s+ART[IÍ]CULO.*$/m, `$&\n1) Para consignar la modificación del artículo en el siguiente sentido:\n   a) Modifícase su texto conforme al comparado.`);
-  }
-  return t;
+  return out.join("\n");
 }
 function renumberGlobally(blocks){
   let n=1; const out=[];
   for(const b of blocks){
     const lines=b.split(/\r?\n/); const acc=[];
     for(const ln of lines){
-      if(/^\s*\d+\)\s/.test(ln)) acc.push(ln.replace(/^\s*\d+\)/, `${n++})`));
+      if(/^\s*\d+\)\s/.test(ln)){ acc.push(ln.replace(/^\s*\d+\)/, `${n++})`)); }
       else acc.push(ln);
     }
-    out.push(acc.join('\n'));
+    out.push(dedupeLines(acc.join("\n")));
   }
   return out;
 }
 
-/* ============ 6) Render con diff y export a Word ============ */
+/* ===== Render con diff y export ===== */
 function renderTable(articles){
   const container=$("resultsContainer"); container.innerHTML="";
   if(!articles.length){ container.innerHTML=`<p class="text-red-500">No hay artículos para mostrar.</p>`; return; }
@@ -376,11 +359,11 @@ $("exportButton").onclick = ()=>{
   saveAs(blob, "Tabla_Comparativa_Indicaciones.docx");
 };
 
-/* ============ 7) Orquestación: generar ============ */
+/* ===== Orquestación ===== */
 $("generateButton").onclick = generate;
 
 async function generate(){
-  hideError();
+  hideError(); $("debugLog").textContent="";
   const key = $("apiKey").value.trim();
   const model = ($("modelName").value.trim()) || baseFallbackModel;
   const original = $("originalText").value.trim();
@@ -397,45 +380,44 @@ async function generate(){
   const t0 = performance.now();
 
   try{
-    // 1) Parseo y emparejado
+    // 1) Parseo & emparejado
     const OB = splitArticles(original);
     const FB = splitArticles(finalTxt);
+    dlog("Detectados — Original:", OB.length, "Final:", FB.length);
     if(!OB.length || !FB.length) throw new Error("No se detectaron encabezados 'Artículo …' en uno de los textos.");
 
     const pairs = pairArticles(OB, FB);
+    dlog("Pares/Clases:", pairs.map(p=>p.type).join(", "));
 
-    // 2) Llamadas por artículo: intentar FT y, si falla, base model
+    // 2) JSON por artículo (FT) y fallback por artículo si falla
     let perArticle = await callIndicationsForAll(pairs, model, key);
-    if(perArticle.some(r=>!r?.ok)){
-      // Fallback solo para los fallidos
-      const failedIdx = perArticle.map((r,i)=>!r.ok?i:-1).filter(i=>i>=0);
-      if(failedIdx.length){
-        const retryPairs = failedIdx.map(i=>pairs[i]);
-        const retried = await callIndicationsForAll(retryPairs, baseFallbackModel, key);
-        failedIdx.forEach((pos,j)=> perArticle[pos] = retried[j]);
-      }
+    const failedIdx = perArticle.map((r,i)=>!r?.ok?i:-1).filter(i=>i>=0);
+    if(failedIdx.length){
+      dlog("Reintentos con modelo base en índices:", failedIdx.join(", "));
+      const retryPairs = failedIdx.map(i=>pairs[i]);
+      const retried = await callIndicationsForAll(retryPairs, baseFallbackModel, key);
+      failedIdx.forEach((pos,j)=> perArticle[pos] = retried[j]);
     }
 
-    // 3) Construcción de filas para render
+    // 3) Construcción + numeración global
     const rows = perArticle.map(r=>{
       const originalBlock = r.pair.original ? `${r.pair.original.header}\n${r.pair.original.text}` : "";
       const finalBlock    = r.pair.final    ? `${r.pair.final.header}\n${r.pair.final.text}`       : "";
       const indic = r.ok ? r.indicaciones :
-        `AL ARTÍCULO ${(r.header||'')}
+`AL ARTÍCULO ${(r.header||'')}
 1) Para consignar la imposibilidad de generar indicaciones.
    a) Déjase constancia: ${r.error||'Error desconocido.'}`;
       return { original: originalBlock, final: finalBlock, indicaciones: indic };
     });
 
-    // 4) Numeración global
     const global = renumberGlobally(rows.map(r=>r.indicaciones));
     rows.forEach((r,i)=> r.indicaciones = global[i]);
 
-    // 5) Render
+    // 4) Render
     renderTable(rows);
 
     const t1 = performance.now();
-    $("timerResult").textContent = `(generado en ${((t1-t0)/1000).toFixed(1)}s)`;
+    $("timerResult").textContent = `(generado en ${((t1-t0)/1000).toFixed(1)}s; artículos: ${rows.length})`;
     $("modelUsed").textContent = `Modelo: ${model}`;
   }catch(err){
     showError(err.message || String(err));
@@ -443,6 +425,10 @@ async function generate(){
     $("generateButton").disabled = false;
   }
 }
+
+/* ===== Captura de errores globales (debug) ===== */
+window.addEventListener("error",(e)=>{ showError("JS error: " + (e.message || e.error || "desconocido")); });
+window.addEventListener("unhandledrejection",(e)=>{ showError("Promesa rechazada: " + (e.reason?.message || String(e.reason))); });
 </script>
 </body>
 </html>
