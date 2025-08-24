@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Copiloto Legal — Comparador per-artículo (FT + OpenAI)</title>
+
+  <!-- UI -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Utilidades -->
+  <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
+  <script src="https://unpkg.com/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/diff@5.1.0/dist/diff.min.js"></script>
+
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    ins { background:#d4edda; text-decoration:none; }
+    del { background:#f8d7da; text-decoration:line-through; }
+    .loader{border:4px solid #f3f3f3;border-top:4px solid #2563eb;border-radius:50%;width:40px;height:40px;animation:spin 1s linear infinite;margin:2rem auto;}
+    @keyframes spin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
+    #resultsTable th,#resultsTable td{border:1px solid #e5e7eb;padding:10px;vertical-align:top}
+    #resultsTable th{background:#f8fafc;text-align:left}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace}
+  </style>
+</head>
+<body class="bg-gray-100 text-gray-800 min-h-screen flex flex-col">
+
+  <div class="container mx-auto p-4 md:p-8 flex-1">
+    <header class="mb-6">
+      <h1 class="text-3xl md:text-4xl font-bold">Copiloto Legal — Per-artículo</h1>
+      <p class="text-gray-600">Parseo local ▸ LLM solo “Indicaciones” ▸ Numeración global ▸ Diff ▸ Word.</p>
+    </header>
+
+    <!-- Config -->
+    <section class="bg-white p-5 rounded-lg shadow mb-6 grid gap-4 md:grid-cols-3">
+      <div class="md:col-span-2">
+        <label class="block font-semibold mb-2">OpenAI API Key</label>
+        <input type="password" id="apiKey" class="w-full p-3 border rounded-md focus:ring-2 focus:ring-blue-500" placeholder="Pega tu API key"/>
+        <p class="text-sm text-gray-500 mt-1">Se usa solo en tu navegador.</p>
+      </div>
+      <div>
+        <label class="block font-semibold mb-2">Modelo</label>
+        <input type="text" id="modelName" class="w-full p-3 border rounded-md focus:ring-2 focus:ring-blue-500 mono" placeholder="ft:..." />
+        <p class="text-xs text-gray-500 mt-1">Cámbialo si quieres usar otro modelo.</p>
+      </div>
+      <div class="md:col-span-3 flex items-center gap-3">
+        <input id="remember" type="checkbox" class="h-4 w-4" checked/>
+        <label for="remember" class="text-sm text-gray-700">Recordar API key y modelo en este navegador</label>
+      </div>
+    </section>
+
+    <!-- Inputs -->
+    <section class="grid gap-6 md:grid-cols-2">
+      <div class="bg-white p-5 rounded-lg shadow">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-xl font-semibold">Texto Original (completo)</h2>
+          <button id="pasteOriginal" class="text-sm text-blue-600 hover:underline">Pegar</button>
+        </div>
+        <textarea id="originalText" class="w-full h-96 p-3 border rounded-md focus:ring-2 focus:ring-blue-500" placeholder="Pega aquí el texto original completo…"></textarea>
+      </div>
+      <div class="bg-white p-5 rounded-lg shadow">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-xl font-semibold">Texto Final (completo)</h2>
+          <button id="pasteFinal" class="text-sm text-blue-600 hover:underline">Pegar</button>
+        </div>
+        <textarea id="finalText" class="w-full h-96 p-3 border rounded-md focus:ring-2 focus:ring-blue-500" placeholder="Pega aquí el texto final completo…"></textarea>
+      </div>
+    </section>
+
+    <!-- Acciones -->
+    <div class="flex flex-wrap gap-3 justify-center my-8">
+      <button id="generateButton" class="bg-green-600 text-white font-bold py-3 px-6 rounded-lg shadow hover:bg-green-700 focus:ring-4 focus:ring-green-300 disabled:bg-gray-400">Generar tabla comparativa</button>
+      <button id="exportButton" class="bg-blue-600 text-white font-bold py-3 px-6 rounded-lg shadow hover:bg-blue-700">Exportar a Word</button>
+      <button id="clearButton" class="bg-gray-200 text-gray-800 font-semibold py-3 px-6 rounded-lg shadow hover:bg-gray-300">Limpiar</button>
+    </div>
+
+    <!-- Resultados -->
+    <section id="outputSection" class="bg-white p-5 rounded-lg shadow hidden">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-xl font-semibold">Resultado <span id="timerResult" class="text-sm font-normal text-gray-500 ml-2"></span></h3>
+        <span id="modelUsed" class="text-xs text-gray-500 mono"></span>
+      </div>
+      <div id="resultsContainer" class="w-full overflow-x-auto"></div>
+    </section>
+
+    <!-- Errores -->
+    <div id="errorBox" class="hidden mt-4 p-4 rounded bg-red-50 border border-red-200 text-red-700"></div>
+  </div>
+
+  <footer class="text-center p-4 text-gray-500 text-sm">
+    Copiloto Legal — Opción A (per-artículo) • Cliente 100% local
+  </footer>
+
+<script>
+/* ============ Helpers básicos ============ */
+const $ = (id)=>document.getElementById(id);
+const defaultFTModel = "ft:gpt-4.1-mini-2025-04-14:personal:copiloto-legal-fine:C7rwpGL7";
+const baseFallbackModel = "gpt-4.1-mini-2025-04-14";
+
+(function boot(){
+  const k = localStorage.getItem("openai_key");
+  const m =
