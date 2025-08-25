@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Copiloto Legal — Multiartículo (A/B/C/D, renumeración y vacíos correctos)</title>
+<title>Copiloto Legal — Comparador Legislativo Multiartículo</title>
 
 <!-- UI -->
 <script src="https://cdn.tailwindcss.com"></script>
@@ -30,7 +30,7 @@
 <div class="container mx-auto p-4 md:p-8 flex-1">
   <header class="mb-6">
     <h1 class="text-3xl md:text-4xl font-bold">Copiloto Legal — Comparador Multiartículo</h1>
-    <p class="text-gray-600">Procesa TODOS los artículos, deja <em>Indicaciones</em> en blanco si no hay cambios y consigna renumeraciones.</p>
+    <p class="text-gray-600">Procesa TODOS los artículos • Indicaciones vacías si no hay cambios • Renumeración global • Exportar a Word.</p>
   </header>
 
   <!-- Config -->
@@ -38,16 +38,16 @@
     <div class="md:col-span-2">
       <label class="block font-semibold mb-2">OpenAI API Key</label>
       <input type="password" id="apiKey" class="w-full p-3 border rounded-md focus:ring-2 focus:ring-blue-500" placeholder="Pega tu API key"/>
-      <p class="text-sm text-gray-500 mt-1">Se usa solo en tu navegador.</p>
+      <p class="text-sm text-gray-500 mt-1">Se usa sólo en tu navegador.</p>
     </div>
     <div>
       <label class="block font-semibold mb-2">Modelo</label>
-      <input type="text" id="modelName" class="w-full p-3 border rounded-md focus:ring-2 focus:ring-blue-500 mono" value="ft:gpt-4.1-mini-2025-04-14:personal:copiloto-legal-fine:C7rwpGL7" />
-      <p class="text-xs text-gray-500 mt-1">Puedes cambiarlo por el base (p. ej., gpt-4.1-mini-2025-04-14).</p>
+      <input type="text" id="modelName" class="w-full p-3 border rounded-md focus:ring-2 focus:ring-blue-500 mono" value="gpt-4o"/>
+      <p class="text-xs text-gray-500 mt-1">También puedes usar tu modelo fine-tuned (p. ej. <span class="mono">ft:...</span>).</p>
     </div>
     <div class="md:col-span-3 flex items-center gap-3">
       <input id="remember" type="checkbox" class="h-4 w-4" checked/>
-      <label for="remember" class="text-sm text-gray-700">Recordar API key y modelo en este navegador</label>
+      <label for="remember" class="text-sm text-gray-700">Recordar API key/modelo en este navegador</label>
     </div>
   </section>
 
@@ -94,11 +94,11 @@
 </div>
 
 <footer class="text-center p-4 text-gray-500 text-sm">
-  Copiloto Legal — Multiartículo • v 1
+  Copiloto Legal — Cliente 100% local
 </footer>
 
 <script>
-/* =================== Utilidades de UI =================== */
+/* ================= Helpers UI ================= */
 const $ = (id)=>document.getElementById(id);
 (function boot(){
   const k = localStorage.getItem("openai_key");
@@ -111,53 +111,76 @@ $("pasteOriginal").onclick = async()=>{ try{$("originalText").value = await navi
 $("pasteFinal").onclick    = async()=>{ try{$("finalText").value    = await navigator.clipboard.readText();}catch{} };
 $("clearButton").onclick   = ()=>{ $("resultsContainer").innerHTML=""; $("outputSection").classList.add("hidden"); $("timerResult").textContent=""; $("debugLog").textContent=""; hideError(); };
 
-function showError(msg){ const box=$("errorBox"); box.textContent=msg; box.classList.remove("hidden"); }
+function showError(msg){ const box=$("errorBox"); box.textContent=msg; box.classList.remove("hidden"); console.error(msg); }
 function hideError(){ $("errorBox").classList.add("hidden"); }
-function dlog(...a){ $("debugLog").textContent += a.join(" ") + "\n"; }
-function escapeHtml(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function dlog(...a){ $("debugLog").textContent += a.join(" ") + "\n"; console.log(...a); }
+function escapeHtml(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function sanitize(s){ return escapeHtml(s).replace(/\n/g,"<br>"); }
 
-/* =================== Segmentación robusta =================== */
+/* ============== Segmentación artículos (maneja bis/ter/… y transitorios) ============== */
+const SUF_RE = "(?:bis|ter|qu(?:á|a)ter|quinquies|sexies|septies|octies|nonies|decies)";
+
 function normalizeHeader(h){ return (h||"").replace(/\s+/g," ").trim().replace(/^Artículo\s+/i,"Artículo "); }
 function romanToInt(str){
-  const s=(str||"").toUpperCase().replace(/[^IVXLCDM]/g,''); if(!s) return null;
-  const map={I:1,V:5,X:10,L:50,C:100,D:500,M:1000}; let v=0,p=0;
-  for(let i=s.length-1;i>=0;i--){ const n=map[s[i]]; v += n<p ? -n : n; p=n; }
+  const s=(str||"").toUpperCase().replace(/[^IVXLCDM]/g,"");
+  if(!s) return null;
+  const map={I:1,V:5,X:10,L:50,C:100,D:500,M:1000};
+  let v=0,p=0; for(let i=s.length-1;i>=0;i--){ const n=map[s[i]]; v += n<p ? -n : n; p=n; }
   return v||null;
+}
+function makeKeyFromHeader(header){
+  let h = header.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ").trim();
+
+  const mNum = h.match(new RegExp(`^articulo\\s+(\\d+)[°º]?\\s*(?:(${SUF_RE}))?(?:\\s+transitorio)?$`,"i"));
+  if (mNum){
+    const n = mNum[1];
+    const suf = mNum[2] ? " " + mNum[2].replace("quáter","quater") : "";
+    const trans = /\btransitorio\b/i.test(h) ? " transitorio" : "";
+    return (`artículo ${n}${suf}${trans}`).trim();
+  }
+  const mRom = h.match(/^articulo\s+([ivxlcdm]+)(?:\s+transitorio)?$/i);
+  if (mRom){
+    const n = romanToInt(mRom[1]) || mRom[1];
+    const trans = /\btransitorio\b/i.test(h) ? " transitorio" : "";
+    return (`artículo ${n}${trans}`).trim();
+  }
+  const ord={'primero':'1','segundo':'2','tercero':'3','cuarto':'4','quinto':'5','sexto':'6','septimo':'7','séptimo':'7','octavo':'8','noveno':'9','decimo':'10','décimo':'10'};
+  const mWord = h.match(/^articulo\s+([a-zñ]+)(?:\s+transitorio)?$/i);
+  if (mWord && ord[mWord[1]]){
+    const trans = /\btransitorio\b/i.test(h) ? " transitorio" : "";
+    return (`artículo ${ord[mWord[1]]}${trans}`).trim();
+  }
+  return h;
 }
 function splitArticles(text){
   const src = (text||"").replace(/\r\n/g,"\n");
-  const re = /(^|\n)(Artículo\s+(?:\d+[°º]?|[ivxlcdm]+|[A-Za-zÁÉÍÓÚÑáéíóúñ]+)(?:\s+transitorio)?)(?:\s*(?:\.-|\.|:))?/gmi;
+  const re = new RegExp(
+    `(^|\\n)[ \\t]*(Artículo\\s+(?:\\d+[°º]?(?:\\s*${SUF_RE})?|[ivxlcdm]+|[A-Za-zÁÉÍÓÚÑáéíóúñ]+)(?:\\s+transitorio)?)(?:\\s*(?:\\.-|\\.|:))?`,
+    "gmi"
+  );
   const blocks=[]; let m, marks=[];
-  while((m=re.exec(src))!==null){ marks.push({start:m.index + (m[1]?m[1].length:0), header:m[2], end:re.lastIndex}); }
+  while((m=re.exec(src))!==null){
+    marks.push({start:m.index + (m[1]?m[1].length:0), header:m[2], end:re.lastIndex});
+  }
   for(let i=0;i<marks.length;i++){
     const cur=marks[i], next=marks[i+1];
-    blocks.push({ header: normalizeHeader(cur.header), body: src.slice(cur.end, next?next.start:src.length).trim() });
+    blocks.push({
+      header: normalizeHeader(cur.header),
+      body: src.slice(cur.end, next?next.start:src.length).trim()
+    });
   }
-  // keys normalizadas
-  const ord={'primero':'1','segundo':'2','tercero':'3','cuarto':'4','quinto':'5','sexto':'6','séptimo':'7','septimo':'7','octavo':'8','noveno':'9','décimo':'10','decimo':'10'};
-  blocks.forEach(b=>{
-    let key=b.header.toLowerCase();
-    key = key.replace(/artículo\s+(\d+)[°º]?/i,(_,n)=>`artículo ${n}`);
-    key = key.replace(/artículo\s+([ivxlcdm]+)/i,(_,r)=>`artículo ${romanToInt(r)||r}`);
-    key = key.replace(/artículo\s+([a-záéíóúñ]+)/i,(_,w)=>`artículo ${ord[w]||w}`);
-    if(/transitorio/i.test(b.header)) key += " transitorio";
-    b.key = key.trim(); b.text=b.body;
-  });
+  blocks.forEach(b=>{ b.key=makeKeyFromHeader(b.header); b.text=b.body; });
   return blocks;
 }
 
-/* =================== Emparejado (A/B/C/D) =================== */
+/* ============== Emparejado A/B/C/D ============== */
 function tokenizeSafe(t){ return (t||"").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g,"").match(/[a-z0-9]+/g)||[]; }
 function jaccard(a,b){ const A=new Set(tokenizeSafe(a)), B=new Set(tokenizeSafe(b)); let inter=0; A.forEach(x=>{if(B.has(x)) inter++;}); const uni=new Set([...A,...B]).size||1; return inter/uni; }
 function pairArticles(OB, FB){
   const oMap=new Map(OB.map(b=>[b.key,b])); const fMap=new Map(FB.map(b=>[b.key,b]));
   const usedF=new Set(); const pairs=[];
-  // A: misma clave
   for(const [k,o] of oMap){ if(fMap.has(k)){ const f=fMap.get(k); usedF.add(k); pairs.push({type:'A', original:o, final:f}); } }
-  // B: nuevos
   for(const [k,f] of fMap){ if(!oMap.has(k) && !usedF.has(k)){ usedF.add(k); pairs.push({type:'B', original:null, final:f}); } }
-  // C/D: originales sin par -> renumeración si similitud alta
   for(const [k,o] of oMap){
     if(pairs.find(p=>p.original?.key===k)) continue;
     let best=null, bestS=0;
@@ -165,83 +188,208 @@ function pairArticles(OB, FB){
     if(bestS>=0.99){ usedF.add(best.kf); pairs.push({type:'D', original:o, final:best.f}); }
     else { pairs.push({type:'C', original:o, final:null}); }
   }
-  // orden por aparición en Final
-  const order = new Map(FB.map((b,i)=>[b.key,i]));
-  pairs.sort((a,b)=>{
-    const ia = a.final ? order.get(a.final.key) ?? 1e9 : 1e9;
-    const ib = b.final ? order.get(b.final.key) ?? 1e9 : 1e9;
-    return ia-ib;
-  });
   return pairs;
 }
 
-/* =================== Detección “sin cambio real” (A) =================== */
-function normalizeForEquality(t){
-  return (t||"")
-    .replace(/\r\n/g,"\n")
-    .replace(/[ \t]+/g," ")
-    .replace(/\s+\n/g,"\n")
-    .replace(/\n\s+/g,"\n")
-    .trim();
-}
-function isNoChange(aText, bText){
-  const A = normalizeForEquality(aText);
-  const B = normalizeForEquality(bText);
-  if (A === B) return true;
-  // respaldo: similitud casi perfecta
-  return jaccard(A,B) >= 0.999;
+/* === ORDEN FUSIONADO: Final para A/B/D y Original para C (eliminados quedan in situ) === */
+function indexMap(blocks){ const m=new Map(); blocks.forEach((b,i)=>m.set(b.key,i)); return m; }
+function orderPairsMerged(pairs, OB, FB){
+  const oIdx = indexMap(OB), fIdx = indexMap(FB);
+  const byFinal=new Map(), byOriginal=new Map();
+  for(const p of pairs){ if(p.final) byFinal.set(p.final.key,p); if(p.original) byOriginal.set(p.original.key,p); }
+
+  const mergedKeys=[]; let i=0,j=0;
+  while(i<OB.length || j<FB.length){
+    const ko = i<OB.length ? OB[i].key : null;
+    const kf = j<FB.length ? FB[j].key : null;
+    if(ko && kf && ko===kf){ mergedKeys.push(kf); i++; j++; continue; }
+    if(ko && !fIdx.has(ko)){ mergedKeys.push(ko); i++; continue; }
+    if(kf && !oIdx.has(kf)){ mergedKeys.push(kf); j++; continue; }
+    if(ko && kf){
+      const posKoEnF=fIdx.get(ko), posKfEnO=oIdx.get(kf);
+      if(posKoEnF<=posKfEnO){ mergedKeys.push(ko); i++; } else { mergedKeys.push(kf); j++; }
+      continue;
+    }
+    if(ko){ mergedKeys.push(ko); i++; }
+    else if(kf){ mergedKeys.push(kf); j++; }
+  }
+  const out=[], seen=new Set();
+  for(const k of mergedKeys){
+    const p = byFinal.get(k) || byOriginal.get(k);
+    if(p && !seen.has(p)){ out.push(p); seen.add(p); }
+  }
+  for(const p of pairs){ if(!seen.has(p)){ out.push(p); seen.add(p); } }
+  return out;
 }
 
-/* =================== Prompts por artículo (solo cuando hay cambios A) =================== */
-function buildIndicationsPrompt(head, originalBlock, finalBlock){
+/* ============== Igualdad (sin cambios) ============== */
+function normalizeForEquality(t){
+  return (t||"").replace(/\r\n/g,"\n").replace(/[ \t]+/g," ")
+    .replace(/\s+\n/g,"\n").replace(/\n\s+/g,"\n").trim();
+}
+function isNoChange(a,b){ const A=normalizeForEquality(a), B=normalizeForEquality(b); if(A===B) return true; return jaccard(A,B)>=0.999; }
+
+/* ============== Incisos: romanos o párrafos (para “nuevo inciso segundo”) ============== */
+const ROMANS=["i","ii","iii","iv","v","vi","vii","viii","ix","x","xi","xii","xiii","xiv","xv","xvi","xvii","xviii","xix","xx"];
+const ORD=["primero","segundo","tercero","cuarto","quinto","sexto","séptimo","octavo","noveno","décimo","undécimo","duodécimo","decimotercero","decimocuarto","decimoquinto","decimosexto","decimoséptimo","decimoctavo","decimonoveno","vigésimo"];
+function ordName(n){ return ORD[n-1] || `${n}º`; }
+
+/* corte por romanos */
+function splitRomanIncisos(text){
+  const src=(text||"").replace(/\r\n/g,"\n");
+  const re=new RegExp(`(^|\\n)(${ROMANS.join("|")})\\)\\s`,"ig");
+  const parts=[]; let m, marks=[];
+  while((m=re.exec(src))!==null){ marks.push({idx: ROMANS.indexOf(m[2].toLowerCase())+1, start:m.index+(m[1]?m[1].length:0), end:re.lastIndex}); }
+  if(!marks.length) return null;
+  for(let i=0;i<marks.length;i++){
+    const cur=marks[i], next=marks[i+1];
+    const body=src.slice(cur.end, next?next.start:src.length).trim();
+    parts.push({n:cur.idx, text:body});
+  }
+  const map=new Map(parts.map(p=>[p.n,p.text]));
+  const order=parts.map(p=>p.n);
+  return { map, order };
+}
+
+/* párrafos como incisos (cuando no hay romanos) */
+function splitParagraphs(text){
+  const paras = (text||"").replace(/\r\n/g,"\n").split(/\n\s*\n+/g).map(s=>s.trim()).filter(Boolean);
+  return paras;
+}
+
+/* alineación por párrafos con ANCLAS y umbrales decrecientes */
+function alignParagraphs(origParas, finalParas){
+  const O = origParas, F = finalParas;
+  const usedO = new Set();
+  const matches = new Map(); // j (final) -> i (original)
+
+  // Ancla 1º ↔ 1º si son razonablemente parecidos
+  if (O.length && F.length){
+    const s = jaccard(O[0], F[0]);
+    if (s >= 0.85){ matches.set(0,0); usedO.add(0); }
+  }
+  // Ancla último ↔ último
+  if (O.length>1 && F.length>1){
+    const s = jaccard(O[O.length-1], F[F.length-1]);
+    if (s >= 0.85 && ![...matches.values()].includes(O.length-1)){
+      matches.set(F.length-1, O.length-1);
+      usedO.add(O.length-1);
+    }
+  }
+
+  function pass(THRESH){
+    for(let j=0;j<F.length;j++){
+      if(matches.has(j)) continue;
+      let bestI=-1, bestS=0;
+      for(let i=0;i<O.length;i++){
+        if(usedO.has(i)) continue;
+        const s=jaccard(O[i], F[j]);
+        if(s>bestS){ bestS=s; bestI=i; }
+      }
+      if(bestS>=THRESH && bestI>=0){
+        matches.set(j,bestI);
+        usedO.add(bestI);
+      }
+    }
+  }
+  [0.995,0.99,0.97,0.94,0.90,0.85].forEach(pass);
+
+  const added=[], removed=[], modified=[];
+  // añadidos: finales sin match (su ordinal es j+1)
+  for(let j=0;j<F.length;j++){
+    if(!matches.has(j)) added.push({ n:j+1, ord:ordName(j+1), f:F[j] });
+  }
+  // removidos: originales sin match
+  for(let i=0;i<O.length;i++){
+    if(![...matches.values()].includes(i)) removed.push({ n:i+1, ord:ordName(i+1), o:O[i] });
+  }
+  // modificados: emparejados pero con diferencias
+  for(const [j,i] of matches){
+    const o=O[i], f=F[j];
+    const same = normalizeForEquality(o)===normalizeForEquality(f) || jaccard(o,f)>=0.999;
+    if(!same) modified.push({ n:j+1, ord:ordName(j+1), o, f });
+  }
+  return { modified, added, removed };
+}
+
+/* smart diff: usa romanos si existen; si no, párrafos */
+function diffIncisosSmart(orig, fin){
+  const R1=splitRomanIncisos(orig), R2=splitRomanIncisos(fin);
+  if(R1 && R2){
+    const modified=[], added=[], removed=[];
+    const all=new Set([...(R1.order||[]),...(R2.order||[])]);
+    all.forEach(n=>{
+      const o=R1.map.get(n), f=R2.map.get(n);
+      if(o && f){
+        const same=normalizeForEquality(o)===normalizeForEquality(f) || jaccard(o,f)>=0.999;
+        if(!same) modified.push({n,ord:ordName(n),o,f});
+      } else if(!o && f){ added.push({n,ord:ordName(n),f}); }
+      else if(o && !f){ removed.push({n,ord:ordName(n),o}); }
+    });
+    return { modified, added, removed };
+  }
+  return alignParagraphs(splitParagraphs(orig), splitParagraphs(fin));
+}
+
+/* literales y frases (pistas al LLM) */
+function extractLiteralsMap(txt){
+  const lines=(txt||"").split(/\r?\n/); const set=new Set();
+  for(const ln of lines){ const m=ln.trim().match(/^([a-z])\)\s/i); if(m) set.add(m[1].toLowerCase()); }
+  return set;
+}
+function literalHints(o,f){
+  const O=extractLiteralsMap(o), F=extractLiteralsMap(f);
+  const added=[...F].filter(x=>!O.has(x)).sort();
+  const removed=[...O].filter(x=>!F.has(x)).sort();
+  return {added, removed};
+}
+function phraseHints(o,f){
+  const diffs = Diff.diffWords(o||"", f||"");
+  const added=[], removed=[];
+  for(const part of diffs){
+    if(part.added){ const v=part.value.replace(/\s+/g," ").trim(); if(v.length>2) added.push(v); }
+    if(part.removed){ const v=part.value.replace(/\s+/g," ").trim(); if(v.length>2) removed.push(v); }
+  }
+  return { added: added.slice(0,8), removed: removed.slice(0,8) };
+}
+
+/* ============== Prompt (JSON estricto) ============== */
+function buildIndicationsPromptJSON(head, originalBlock, finalBlock, hints){
   const system = [
-    "Rol: Eres un asesor legislativo experto en Chile, con especialización en técnica parlamentaria.",
-    "Tu misión: generar INDICACIONES precisas para el artículo indicado, con terminología oficial.",
-    "",
-    "GLOSARIO (uso obligatorio):",
-    "Verbos: Incorpórase, Agrégase, Añádese, Sustitúyese, Reemplázase, Intercálese, Suprímese, Elimínase, Modifícase.",
-    "Sustantivos: el guarismo, la expresión, el numeral, el literal, el artículo, el inciso.",
-    "",
-    "REGLAS DE ORO:",
-    "- Devuelve SOLO el bloque de indicaciones, sin explicaciones ni prefacios.",
-    "- Encabezado: AL ARTÍCULO [nombre completo].",
-    "- Una indicación por unidad afectada (inciso, numeral, literal, encabezado).",
-    "- Si hay múltiples cambios en la misma unidad: 'en el siguiente sentido:' y desglosa a), b), c).",
-    "- No repitas párrafos completos.",
-    "",
-    "FORMATO ESTRICTO:",
-    "AL ARTÍCULO [nombre completo]",
-    "1) Para [verbo en infinitivo] ...",
-    "   a) [Verbo normativo] ...",
-    "2) ...",
-    "",
-    "Instrucción final: razona internamente y NO expliques tus pasos."
+    "Eres un asesor legislativo chileno.",
+    "Devuelve ÚNICAMENTE un JSON válido UTF-8 con este esquema:",
+    '{"al_articulo":"AL ARTÍCULO [nombre completo]","indicaciones":["1) ...","   a) ..."]}',
+    "Reglas:",
+    "- Redacta en español normativo: Incorpórase, Agrégase, Añádese, Sustitúyese, Reemplázase, Intercálese, Suprímese, Elimínase, Modifícase.",
+    "- Numera sólo dentro de este artículo (1), 2), …). La numeración global la hará el cliente.",
+    "- Si NO corresponde ninguna indicación, devuelve indicaciones: [].",
+    "- Debes cubrir CADA inciso modificado/suprimido/agregado de las pistas.",
+    "- Para incisos AGREGADOS usa EXACTAMENTE: \"Incorpórese un nuevo inciso [ordinal], pasando el actual inciso [ordinal] a ser [ordinal siguiente], y así sucesivamente:\" y luego el tenor completo entre comillas. NUNCA uses \"Intercálese\" para incisos completos; \"Intercálese\" sólo aplica a frases dentro de un inciso.",
+    "- Si NO hay incisos detectados pero hay diferencias, genera 1 indicación 'Para modificar el artículo en el siguiente sentido:' y desglosa a), b), c) con frases/expresiones agregadas o suprimidas.",
+    `- Pistas incisos: modificados=[${hints.incisos.modified.map(x=>x.ord).join(", ")||"ninguno"}]; agregados=[${hints.incisos.added.map(x=>x.ord).join(", ")||"ninguno"}]; suprimidos=[${hints.incisos.removed.map(x=>x.ord).join(", ")||"ninguno"}].`,
+    `- Pistas literales: agregados=[${hints.literals.added.join(", ")||"ninguno"}]; suprimidos=[${hints.literals.removed.join(", ")||"ninguno"}].`,
+    `- Pistas frases+: agregadas=[${(hints.phrases.added||[]).map(s=>'"'+s+'"').join(", ")||"ninguna"}]; suprimidas=[${(hints.phrases.removed||[]).map(s=>'"'+s+'"').join(", ")||"ninguna"}].`,
+    "- No repitas párrafos completos. Razona internamente y NO expliques tus pasos."
   ].join("\n");
 
   const user = [
     `Genera INDICACIONES para ${head} (caso A: modificación).`,
-    "",
-    "[Texto Original]",
-    originalBlock,
-    "",
-    "[Texto Final]",
-    finalBlock
-  ].join("\n");
+    "[Texto Original]", originalBlock,
+    "[Texto Final]",   finalBlock
+  ].join("\n\n");
 
   return { system, user };
 }
 
-/* =================== LLM calls =================== */
-async function askText(systemContent, userContent, model, apiKey){
+/* ============== LLM (chat/completions con JSON) ============== */
+async function askJSON(systemContent, userContent, model, apiKey){
   const url="https://api.openai.com/v1/chat/completions";
   const payload={
     model,
-    messages:[
-      {role:"system", content:systemContent},
-      {role:"user",   content:userContent}
-    ],
+    response_format:{ type:"json_object" },
+    messages:[{role:"system",content:systemContent},{role:"user",content:userContent}],
     temperature:0.0,
-    max_tokens:1200
+    max_tokens:1600
   };
   let lastErr;
   for(let i=0;i<5;i++){
@@ -255,10 +403,10 @@ async function askText(systemContent, userContent, model, apiKey){
         const data=await res.json();
         const text=data?.choices?.[0]?.message?.content||"";
         if(!text) throw new Error("Respuesta vacía.");
-        return text.trim();
+        return JSON.parse(text);
       }
-      if((res.status===429 || res.status>=500) && i<4){
-        await new Promise(r=>setTimeout(r, (2**i)*1000 + Math.random()*500));
+      if((res.status===429||res.status>=500) && i<4){
+        await new Promise(r=>setTimeout(r,(2**i)*1000 + Math.random()*500));
         continue;
       }
       throw new Error(`HTTP ${res.status}: ${await res.text()}`);
@@ -267,31 +415,80 @@ async function askText(systemContent, userContent, model, apiKey){
   throw lastErr;
 }
 
-/* =================== Construcción de indicaciones por tipo =================== */
-function makeInd_B(pair){ // Nuevo
-  const head = pair.final.header;
-  const tenor = pair.final.text;
-  return `AL ARTÍCULO ${head.replace(/^Artículo\s+/i,'')}\n1) Para agregar el siguiente artículo ${head.replace(/^Artículo\s+/i,'')}, nuevo, del siguiente tenor: "${tenor}"`;
+/* ============== Fallback determinístico (incisos nuevos correctos) ============== */
+function deterministicIncisoBlock(head, incHints){
+  const lines=[`AL ARTÍCULO ${head.replace(/^Artículo\s+/i,'')}`]; let n=1;
+  for(const m of incHints.modified){
+    lines.push(`${n++}) Para modificar su inciso ${m.ord} en el siguiente sentido:\n   a) Modifícase su texto conforme al comparado.`);
+  }
+  for(const r of incHints.removed){
+    lines.push(`${n++}) Para suprimir el inciso ${r.ord}.`);
+  }
+  for(const a of incHints.added){
+    const tenor=(a.f||"").replace(/"/g,'\\"');
+    const nextOrd = ordName(a.n + 1);
+    lines.push(`${n++}) Incorpórese un nuevo inciso ${a.ord}, pasando el actual inciso ${a.ord} a ser ${nextOrd}, y así sucesivamente: "${tenor}"`);
+  }
+  return lines.length>1 ? lines.join("\n") : "";
 }
-function makeInd_C(pair){ // Eliminado
-  const head = pair.original.header;
-  return `AL ARTÍCULO ${head.replace(/^Artículo\s+/i,'')}\n1) Para suprimir el artículo ${head.replace(/^Artículo\s+/i,'')}.`;
-}
-function makeInd_D(pair){ // Renumerado
-  const ho = pair.original.header;
-  const hf = pair.final.header;
-  return `AL ARTÍCULO ${ho.replace(/^Artículo\s+/i,'')}\n1) Para consignar que el artículo ${ho.replace(/^Artículo\s+/i,'')} ha pasado a ser ${hf.replace(/^Artículo\s+/i,'')}.`;
+function deterministicArticleBlock(head, phrases){
+  const lines=[`AL ARTÍCULO ${head.replace(/^Artículo\s+/i,'')}`, `1) Para modificar el artículo en el siguiente sentido:`];
+  let code=97;
+  for(const s of (phrases.removed||[])){ lines.push(`   ${String.fromCharCode(code++)}) Suprímese la expresión "${s}".`); if(code>122) break; }
+  for(const s of (phrases.added||[])){ lines.push(`   ${String.fromCharCode(code++)}) Incorpórase la frase "${s}".`); if(code>122) break; }
+  return lines.length>2 ? lines.join("\n") : "";
 }
 
-/* =================== Numeración correlativa global =================== */
+/* ============== Indicaciones por tipo ================= */
+function makeInd_B(pair){
+  const head = pair.final.header; const tenor = pair.final.text;
+  return `AL ARTÍCULO ${head.replace(/^Artículo\s+/i,'')}\n1) Para agregar el siguiente artículo ${head.replace(/^Artículo\s+/i,'')}, nuevo, del siguiente tenor: "${tenor}"`;
+}
+function makeInd_C(pair){ const head=pair.original.header; return `AL ARTÍCULO ${head.replace(/^Artículo\s+/i,'')}\n1) Para suprimir el artículo ${head.replace(/^Artículo\s+/i,'')}.`; }
+function makeInd_D(pair){ const ho=pair.original.header, hf=pair.final.header; return `AL ARTÍCULO ${ho.replace(/^Artículo\s+/i,'')}\n1) Para consignar que el artículo ${ho.replace(/^Artículo\s+/i,'')} ha pasado a ser ${hf.replace(/^Artículo\s+/i,'')}.`; }
+
+/* ============== Normalizaciones ============== */
+function ensureTopLevelNumbering(block){
+  if(!block || !block.trim()) return block;
+  const lines = block.split(/\r?\n/);
+  const hasTop = lines.some(l => /^\s*\d+\)\s/.test(l));
+  const onlyLetters = lines.slice(1).length>0 && lines.slice(1).every(l => /^\s*[A-Za-zÁÉÍÓÚÑa-záéíóúñ]\)\s/.test(l));
+  if(!hasTop && onlyLetters){
+    const al = lines[0].startsWith("AL ART") ? lines[0] : lines.shift();
+    const sub = lines.filter(l=>/^\s*[A-Za-zÁÉÍÓÚÑa-záéíóúñ]\)\s/.test(l)).map(l=>`   ${l}`);
+    return `${al}\n1) Para modificar el artículo en el siguiente sentido:\n${sub.join("\n")}`.trim();
+  }
+  return block;
+}
+function normalizeIncisoAdds(text, incHints){
+  if(!text || !incHints || !incHints.added || !incHints.added.length) return text;
+  const added = [...incHints.added];
+  let used = 0;
+  const lines = text.split(/\r?\n/).map((ln)=>{
+    if(!/Interc(?:á|a)lese\s+(?:el\s+)?inciso\b/i.test(ln)) return ln;
+    if(used >= added.length) return ln;
+    const ad = added[used++];
+    const nextOrd = ordName(ad.n + 1);
+    let tenor = "";
+    const mQ = ln.match(/:\s*(["“]?)([\s\S]*?)\1\s*$/);
+    if (mQ && mQ[2]) {
+      const raw = mQ[2].trim().replace(/^['"“”]+|['"“”]+$/g,"");
+      if (raw) tenor = ` "${raw}"`;
+    }
+    const prefix = (ln.match(/^\s*[a-z]\)\s*/i) || [""])[0];
+    return `${prefix}Incorpórese un nuevo inciso ${ad.ord}, pasando el actual inciso ${ad.ord} a ser ${nextOrd}, y así sucesivamente:${tenor}`;
+  });
+  return lines.join("\n");
+}
+
+/* ============== Numeración global (omite vacíos) ============== */
 function renumberGlobally(blocks){
   let n=1; const out=[];
   for(const b of blocks){
-    if(!b || !b.trim()){ out.push(""); continue; } // bloque vacío no cuenta
+    if(!b || !b.trim()){ out.push(""); continue; }
     const lines=b.split(/\r?\n/); const acc=[];
-    let firstNumbered=false;
     for(const ln of lines){
-      if(/^\s*\d+\)\s/.test(ln)){ acc.push(ln.replace(/^\s*\d+\)/, `${n++})`)); firstNumbered=true; }
+      if(/^\s*\d+\)\s/.test(ln)){ acc.push(ln.replace(/^\s*\d+\)/, `${n++})`)); }
       else acc.push(ln);
     }
     out.push(acc.join("\n"));
@@ -299,7 +496,7 @@ function renumberGlobally(blocks){
   return out;
 }
 
-/* =================== Render & export =================== */
+/* ============== Render & export ============== */
 function renderTable(articles){
   const container=$("resultsContainer"); container.innerHTML="";
   if(!articles.length){ container.innerHTML=`<p class="text-red-500">No hay artículos para mostrar.</p>`; return; }
@@ -355,75 +552,93 @@ $("exportButton").onclick = ()=>{
   saveAs(blob, "Tabla_Comparativa_Indicaciones.docx");
 };
 
-/* =================== Orquestación principal =================== */
+/* ============== Orquestación principal ============== */
 document.getElementById("generateButton").onclick = generate;
 
 async function generate(){
-  hideError(); $("debugLog").textContent="";
-  const key = $("apiKey").value.trim();
-  const model = ($("modelName").value.trim()) || "gpt-4.1-mini-2025-04-14";
-  const originalAll = $("originalText").value.trim();
-  const finalAll    = $("finalText").value.trim();
-  if(!key) return showError("Ingresa tu OpenAI API key.");
-  if(!originalAll || !finalAll) return showError("Pega texto en ambas columnas.");
-
-  if($("remember").checked){ localStorage.setItem("openai_key",key); localStorage.setItem("openai_model",model); }
-
-  $("generateButton").disabled = true;
-  $("resultsContainer").innerHTML = '<div class="loader"></div>';
-  $("outputSection").classList.remove("hidden");
-  $("timerResult").textContent=""; $("modelUsed").textContent="";
-  const t0 = performance.now();
-
   try{
-    // 1) Parseo & emparejado
+    hideError(); $("debugLog").textContent="";
+    const key = $("apiKey").value.trim();
+    const model = ($("modelName").value.trim()) || "gpt-4o";
+    const originalAll = $("originalText").value.trim();
+    const finalAll    = $("finalText").value.trim();
+    if(!key) return showError("Ingresa tu OpenAI API key.");
+    if(!originalAll || !finalAll) return showError("Pega texto en ambas columnas.");
+    if($("remember").checked){ localStorage.setItem("openai_key",key); localStorage.setItem("openai_model",model); }
+
+    $("generateButton").disabled = true;
+    $("resultsContainer").innerHTML = '<div class="loader"></div>';
+    $("outputSection").classList.remove("hidden");
+    $("timerResult").textContent=""; $("modelUsed").textContent="";
+    const t0 = performance.now();
+
     const OB = splitArticles(originalAll);
     const FB = splitArticles(finalAll);
     dlog("Detectados — Original:", OB.length, "Final:", FB.length);
     if(!OB.length || !FB.length) throw new Error("No se detectaron encabezados 'Artículo …' en uno de los textos.");
-    const pairs = pairArticles(OB, FB);
+    const pairs = orderPairsMerged(pairArticles(OB, FB), OB, FB);
     dlog("Pares/Clases:", pairs.map(p=>p.type).join(", "));
 
-    // 2) Construcción de indicaciones por par
     const rows = [];
     for (const p of pairs){
       const originalBlock = p.original ? `${p.original.header}\n${p.original.text}` : "";
       const finalBlock    = p.final    ? `${p.final.header}\n${p.final.text}`       : "";
 
       if (p.type === 'A'){
-        // Si no hay cambios REALES → indicaciones vacías
         if (isNoChange(p.original.text, p.final.text)){
           rows.push({ original: originalBlock, final: finalBlock, indicaciones: "" });
           continue;
         }
-        // Hay cambios → pedir indicaciones
-        const {system, user} = buildIndicationsPrompt(p.final.header || p.original.header, originalBlock, finalBlock);
-        let txt = "";
+        const incHints = diffIncisosSmart(p.original.text, p.final.text);
+        const litHints = literalHints(p.original.text, p.final.text);
+        const phrHints = phraseHints(p.original.text, p.final.text);
+        const hints = { incisos: incHints, literals: litHints, phrases: phrHints };
+
+        let obj;
         try{
-          txt = await askText(system, user, model, key);
+          const { system, user } = buildIndicationsPromptJSON(p.final.header || p.original.header, originalBlock, finalBlock, hints);
+          obj = await askJSON(system, user, model, key);
         }catch(e){
-          // fallback al base model
-          txt = await askText(system, user, "gpt-4.1-mini-2025-04-14", key);
+          console.warn("LLM falló, uso fallback:", e);
+          obj = { al_articulo: "", indicaciones: [] };
         }
-        // Reparación mínima: encabezado y al menos 1)
-        if (!/^AL\s+ART[IÍ]CULO/i.test(txt)){
-          txt = `AL ARTÍCULO ${(p.final?.header||p.original?.header||"").replace(/^Artículo\s+/i,'')}\n` + txt;
+
+        const al  = (obj.al_articulo || `AL ARTÍCULO ${(p.final?.header||p.original?.header||"").replace(/^Artículo\s+/i,'')}`).trim();
+        const arr = Array.isArray(obj.indicaciones)? obj.indicaciones.map(s=>String(s||"").trim()).filter(Boolean):[];
+        let text = arr.length ? [al, ...arr].join("\n") : "";
+
+        // Si devolvió sólo letras sin "1)", envolver
+        const soloLetras = arr.length > 0
+          && arr.every(l => /^\s*[a-z]\)\s/i.test(l))
+          && !arr.some(l => /^\s*\d+\)\s/.test(l));
+        if (soloLetras) {
+          text = `${al}\n1) Para modificar el artículo en el siguiente sentido:\n` +
+                 arr.map(l => `   ${l}`).join("\n");
         }
-        if (!/^\s*1\)\s/m.test(txt)){
-          txt = txt.replace(/^AL\s+ART[IÍ]CULO.*$/m, `$&\n1) Para consignar la modificación del artículo en el siguiente sentido:\n   a) Modifícase su texto conforme al comparado.`);
+
+        // Corrige “Intercálese el inciso …” -> “Incorpórese un nuevo inciso …”
+        text = normalizeIncisoAdds(text, incHints);
+
+        if (!text && (incHints.modified.length || incHints.removed.length || incHints.added.length)){
+          text = deterministicIncisoBlock(p.final?.header || p.original?.header || "Artículo", incHints);
         }
-        rows.push({ original: originalBlock, final: finalBlock, indicaciones: txt });
+        if (!text && (phrHints.added.length || phrHints.removed.length)){
+          text = deterministicArticleBlock(p.final?.header || p.original?.header || "Artículo", phrHints);
+        }
+        rows.push({ original: originalBlock, final: finalBlock, indicaciones: text });
       }
       else if (p.type === 'B'){ rows.push({ original: "", final: finalBlock, indicaciones: makeInd_B(p) }); }
       else if (p.type === 'C'){ rows.push({ original: originalBlock, final: "", indicaciones: makeInd_C(p) }); }
       else if (p.type === 'D'){ rows.push({ original: originalBlock, final: finalBlock, indicaciones: makeInd_D(p) }); }
     }
 
-    // 3) Numeración correlativa global (saltando vacíos)
+    // Blindaje: asegurar numeral superior si el modelo devolvió solo letras
+    rows.forEach(r => { r.indicaciones = ensureTopLevelNumbering(r.indicaciones); });
+
+    // Numeración global continua
     const renum = renumberGlobally(rows.map(r=>r.indicaciones));
     rows.forEach((r,i)=> r.indicaciones = renum[i]);
 
-    // 4) Render
     renderTable(rows);
 
     const t1 = performance.now();
@@ -436,7 +651,7 @@ async function generate(){
   }
 }
 
-/* =================== Captura de errores globales =================== */
+/* ============== Errores globales ============== */
 window.addEventListener("error",(e)=>{ showError("JS error: " + (e.message || e.error || "desconocido")); });
 window.addEventListener("unhandledrejection",(e)=>{ showError("Promesa rechazada: " + (e.reason?.message || String(e.reason))); });
 </script>
