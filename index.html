@@ -559,7 +559,7 @@ async function generate(){
   try{
     hideError(); $("debugLog").textContent="";
     const key = $("apiKey").value.trim();
-    const model = ($("modelName").value.trim()) || "gpt-4o";
+    const model = ($("modelName").value.trim()) || "gpt-5-chat-latest";
     const originalAll = $("originalText").value.trim();
     const finalAll    = $("finalText").value.trim();
     if(!key) return showError("Ingresa tu OpenAI API key.");
